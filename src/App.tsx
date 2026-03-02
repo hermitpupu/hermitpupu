@@ -16,7 +16,9 @@ import {
   History,
   CheckCircle2,
   Loader2,
-  FileDown
+  FileDown,
+  Mic,
+  MicOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
@@ -76,7 +78,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const resultRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
 
   const handleGenerate = async () => {
     if (!sessionInput.trim()) {
@@ -208,11 +212,63 @@ ${keywordsInput || '无'}`;
     }
   };
 
+  const toggleListening = () => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setError('您的浏览器不支持语音识别功能。');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'zh-CN';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onresult = (event: any) => {
+      let transcript = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          transcript += event.results[i][0].transcript;
+        }
+      }
+      if (transcript) {
+        setSessionInput(prev => prev + transcript);
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      setIsListening(false);
+      if (event.error === 'not-allowed') {
+        setError('请允许麦克风访问权限以使用语音输入。');
+      } else {
+        setError('语音输入出错，请重试。');
+      }
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognition.start();
+    recognitionRef.current = recognition;
+    setIsListening(true);
+  };
+
   const handleReset = () => {
     setSessionInput('');
     setKeywordsInput('');
     setResult('');
     setError(null);
+    if (isListening) {
+      recognitionRef.current?.stop();
+    }
   };
 
   return (
@@ -244,17 +300,31 @@ ${keywordsInput || '无'}`;
         <section className="space-y-6">
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="p-6 space-y-4">
-              <div className="space-y-2">
+              <div className="space-y-2 relative">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                   <FileText size={16} className="text-emerald-600" />
                   会谈简述 / 速记
                 </label>
-                <textarea
-                  value={sessionInput}
-                  onChange={(e) => setSessionInput(e.target.value)}
-                  placeholder="在此粘贴 session 自由记录、速记或对话摘要..."
-                  className="w-full h-48 p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all resize-none text-sm leading-relaxed"
-                />
+                <div className="relative">
+                  <textarea
+                    value={sessionInput}
+                    onChange={(e) => setSessionInput(e.target.value)}
+                    placeholder="在此粘贴 session 自由记录、速记或对话摘要..."
+                    className="w-full h-48 p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all resize-none text-sm leading-relaxed"
+                  />
+                  <button
+                    onClick={toggleListening}
+                    className={cn(
+                      "absolute bottom-4 right-4 p-3 rounded-full transition-all shadow-sm",
+                      isListening 
+                        ? "bg-red-500 text-white animate-pulse" 
+                        : "bg-white text-emerald-600 border border-gray-200 hover:bg-gray-50"
+                    )}
+                    title={isListening ? "停止录音" : "语音输入"}
+                  >
+                    {isListening ? <MicOff size={20} /> : <Mic size={20} />}
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-2">
